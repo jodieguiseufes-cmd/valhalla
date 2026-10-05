@@ -20,6 +20,11 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CreateNewFolder
@@ -252,6 +257,7 @@ fun LazyListScope.locationSelectorContent(
                                 locations = group,
                                 pingsState = pingsState,
                                 isPinned = isPinned,
+                                onToggleCollapse = { onToggleGroupCollapsed(groupKey) },
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -278,9 +284,9 @@ fun LazyListScope.locationSelectorContent(
                             autoUpdateEnabled = groupAutoUpdate,
                             onTogglePin = { onToggleGroupPinned(groupKey) },
                             onTogglePingSort = { onToggleGroupPingSort(groupKey) },
-                            onToggleAutoUpdate = {
-                                groupSubUrl?.let { onSetSubscriptionAutoUpdate(it, !groupAutoUpdate) }
-                            },
+                            onToggleAutoUpdate = if (!isFree) {
+                                { groupSubUrl?.let { onSetSubscriptionAutoUpdate(it, !groupAutoUpdate) } }
+                            } else null,
                             onRefreshSubscription = groupSubUrl?.let { url -> { onRefreshSubscription(url) } },
                             currentName = group.firstOrNull()?.metadata?.subscription?.displayName().orEmpty(),
                             onRename = groupSubUrl?.takeIf { !isFree }?.let { url -> { name -> onRenameSubscription(url, name) } },
@@ -420,6 +426,7 @@ fun LazyListScope.locationSelectorContent(
                                                     locations = mGroup,
                                                     pingsState = pingsState,
                                                     isPinned = mPinned,
+                                                    onToggleCollapse = { onToggleGroupCollapsed(mKey) },
                                                     modifier = Modifier.weight(1f)
                                                 )
                                             }
@@ -432,6 +439,7 @@ fun LazyListScope.locationSelectorContent(
                                             )
                                             val mAutoUpdate = mGroup.none { it.metadata?.subscription?.autoUpdateEnabled == false }
                                             val mSubUrl = mGroup.firstOrNull()?.subscriptionUrl
+                                            val mIsFree = mSubUrl?.trim() == org.olcbox.app.ui.features.home.FREE_SERVERS_URL
                                             val mWebPageUrl = mGroup.firstNotNullOfOrNull {
                                                 it.metadata?.subscription?.webPageUrl?.takeIf { url -> url.isNotBlank() }
                                             }
@@ -442,12 +450,12 @@ fun LazyListScope.locationSelectorContent(
                                                 autoUpdateEnabled = mAutoUpdate,
                                                 onTogglePin = { onToggleGroupPinned(mKey) },
                                                 onTogglePingSort = { onToggleGroupPingSort(mKey) },
-                                                onToggleAutoUpdate = {
-                                                    mSubUrl?.let { onSetSubscriptionAutoUpdate(it, !mAutoUpdate) }
-                                                },
+                                                onToggleAutoUpdate = if (!mIsFree) {
+                                                    { mSubUrl?.let { onSetSubscriptionAutoUpdate(it, !mAutoUpdate) } }
+                                                } else null,
                                                 onRefreshSubscription = mSubUrl?.let { url -> { onRefreshSubscription(url) } },
                                                 currentName = mGroup.firstOrNull()?.metadata?.subscription?.displayName().orEmpty(),
-                                                onRename = mSubUrl?.let { url -> { name -> onRenameSubscription(url, name) } },
+                                                onRename = mSubUrl?.takeIf { !mIsFree }?.let { url -> { name -> onRenameSubscription(url, name) } },
                                                 onMoveToFolder = { onRequestMoveToFolder(listOf(CustomGroup.subMember(mKey))) },
                                                 onDelete = { onDeleteSubscription(mIds) },
                                                 subscriptionPageUrl = mWebPageUrl
@@ -932,10 +940,10 @@ private fun SubscriptionGroupMenu(
     isPinned: Boolean,
     isPingSorted: Boolean,
     isPingDescending: Boolean,
-    autoUpdateEnabled: Boolean,
+    autoUpdateEnabled: Boolean = true,
     onTogglePin: () -> Unit,
     onTogglePingSort: () -> Unit,
-    onToggleAutoUpdate: () -> Unit,
+    onToggleAutoUpdate: (() -> Unit)? = null,
     // Non-null only when this group is backed by a subscription URL we can re-download.
     onRefreshSubscription: (() -> Unit)? = null,
     // Current visible name (prefills the dialog) and the rename action; null hides the menu entry.
@@ -1049,28 +1057,30 @@ private fun SubscriptionGroupMenu(
                     expanded = false
                 }
             )
-            DropdownMenuItem(
-                text = { Text(s.groupAutoUpdate) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = if (autoUpdateEnabled) Icons.Outlined.Sync else Icons.Outlined.SyncDisabled,
-                        contentDescription = null
-                    )
-                },
-                trailingIcon = if (autoUpdateEnabled) {
-                    {
+            if (onToggleAutoUpdate != null) {
+                DropdownMenuItem(
+                    text = { Text(s.groupAutoUpdate) },
+                    leadingIcon = {
                         Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
+                            imageVector = if (autoUpdateEnabled) Icons.Outlined.Sync else Icons.Outlined.SyncDisabled,
+                            contentDescription = null
                         )
+                    },
+                    trailingIcon = if (autoUpdateEnabled) {
+                        {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else null,
+                    onClick = {
+                        onToggleAutoUpdate()
+                        expanded = false
                     }
-                } else null,
-                onClick = {
-                    onToggleAutoUpdate()
-                    expanded = false
-                }
-            )
+                )
+            }
             DropdownMenuItem(
                 text = { Text(s.moveToFolder) },
                 leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) },
@@ -1272,10 +1282,88 @@ private fun LocationGroupHeader(
 }
 
 @Composable
+private fun SubscriptionAnnounceText(
+    announce: String,
+    onToggleCollapse: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val uriHandler = LocalUriHandler.current
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    val annotatedString = remember(announce, primaryColor) {
+        buildAnnotatedString {
+            val linkRegex = Regex("""(https?://[^\s]+|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|t\.me/[^\s]+|tg://[^\s]+|(?<![a-zA-Z0-9._%+-])@[A-Za-z0-9_]{3,32}(?!\.[a-zA-Z])|\b(?:[a-zA-Z0-9-]+\.)+(?:com|online|org|net|ru|io|me|dev|app|site|space|top|xyz|pro|su|info|biz)(?:/[^\s]*)?\b)""")
+            var lastIndex = 0
+            val matches = linkRegex.findAll(announce)
+            for (match in matches) {
+                val start = match.range.first
+                val end = match.range.last + 1
+                if (start > lastIndex) {
+                    append(announce.substring(lastIndex, start))
+                }
+                var rawLink = match.value
+                var trailingPunct = ""
+                while (rawLink.isNotEmpty() && (rawLink.endsWith(".") || rawLink.endsWith(",") ||
+                            rawLink.endsWith("!") || rawLink.endsWith("?") ||
+                            rawLink.endsWith(")") || rawLink.endsWith("\"") || rawLink.endsWith("'"))) {
+                    trailingPunct = rawLink.takeLast(1) + trailingPunct
+                    rawLink = rawLink.dropLast(1)
+                }
+                val targetUrl = when {
+                    rawLink.startsWith("http://") || rawLink.startsWith("https://") -> rawLink
+                    rawLink.contains("@") && !rawLink.startsWith("@") -> "mailto:$rawLink"
+                    rawLink.startsWith("t.me/") -> "https://$rawLink"
+                    rawLink.startsWith("tg://") -> rawLink
+                    rawLink.startsWith("@") -> "https://t.me/${rawLink.removePrefix("@")}"
+                    else -> "https://$rawLink"
+                }
+                pushStringAnnotation(tag = "URL", annotation = targetUrl)
+                pushStyle(
+                    SpanStyle(
+                        color = primaryColor,
+                        fontWeight = FontWeight.SemiBold,
+                        textDecoration = TextDecoration.Underline
+                    )
+                )
+                append(rawLink)
+                pop()
+                pop()
+                if (trailingPunct.isNotEmpty()) {
+                    append(trailingPunct)
+                }
+                lastIndex = end
+            }
+            if (lastIndex < announce.length) {
+                append(announce.substring(lastIndex))
+            }
+        }
+    }
+
+    ClickableText(
+        text = annotatedString,
+        style = MaterialTheme.typography.labelSmall.copy(
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+            color = MaterialTheme.colorScheme.primary
+        ),
+        modifier = modifier.padding(top = 2.dp),
+        onClick = { offset ->
+            val clickedAnnotation = annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset).firstOrNull()
+            if (clickedAnnotation != null) {
+                runCatching { uriHandler.openUri(clickedAnnotation.item) }
+            } else {
+                onToggleCollapse?.invoke()
+            }
+        }
+    )
+}
+
+@Composable
 private fun SubscriptionGroupHeader(
     locations: List<LocationItem>,
     pingsState: PingsState,
     isPinned: Boolean = false,
+    onToggleCollapse: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val first = locations.firstOrNull()
@@ -1338,16 +1426,10 @@ private fun SubscriptionGroupHeader(
         // right under the title like Happ. Gated on the app-settings toggle (off by default) and
         // independent of [info], so a sub that carries ONLY a description still shows it.
         if (org.olcbox.app.ui.features.locations.components.LocalShowSubscriptionDescription.current) {
-            first?.metadata?.subscription?.announce?.takeIf { it.isNotBlank() }?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 11.sp,
-                    lineHeight = 13.sp,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp)
+            first?.metadata?.subscription?.announce?.takeIf { it.isNotBlank() }?.let { announceText ->
+                SubscriptionAnnounceText(
+                    announce = announceText,
+                    onToggleCollapse = onToggleCollapse
                 )
             }
         }
