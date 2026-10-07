@@ -1,0 +1,81 @@
+name: Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      abi:
+        description: 'Какие процессоры собирать'
+        type: choice
+        default: arm64-v8a
+        options:
+          - arm64-v8a
+          - all
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY/CodeQL" || true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cores/go.mod
+          cache: false
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "ndk;28.2.13676358"
+
+      - name: Install gomobile
+        run: |
+          cd cores
+          go install golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          "$(go env GOPATH)/bin/gomobile" init || true
+
+      - name: Signing key
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          cd YPtun
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > release.keystore
+            ALIAS="$KS_ALIAS"; PASS="$KS_PASS"
+            echo "Using the permanent signing key"
+          else
+            ALIAS=valhalla-test; PASS=$(openssl rand -hex 12)
+            keytool -genkeypair -keystore release.keystore -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 10000 -storepass "$PASS" -keypass "$PASS" -dname "CN=Valhalla"
+            echo "::warning::Temporary test key: do not publish this APK; builds with another key cannot update it"
+          fi
+          printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$PASS" "$ALIAS" "$PASS" > keystore.properties
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        working-directory: YPtun
+        run: |
+          chmod +x gradlew
+          EXTRA=""
+          if [ "${{ inputs.abi }}" = "arm64-v8a" ]; then EXTRA="-Polcbox.android.abiFilters=arm64-v8a"; fi
+          ./gradlew :androidApp:assembleRelease --no-daemon --stacktrace $EXTRA
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Valhalla-apk
+          path: YPtun/androidApp/build/outputs/apk/release/*.apk
+          if-no-files-found: error
