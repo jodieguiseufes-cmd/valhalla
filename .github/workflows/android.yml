@@ -46,6 +46,11 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
           "$(go env GOPATH)/bin/gomobile" init || true
 
+      - name: Apply Valhalla branding
+        run: |
+          python3 -m pip install --break-system-packages pillow
+          bash branding/apply.sh
+
       - name: Signing key
         env:
           KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
