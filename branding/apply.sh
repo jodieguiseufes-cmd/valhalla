@@ -58,4 +58,68 @@ for d, s in fg.items():
     o.save(f'{p}/ic_launcher.png')
 print('icons generated from', files[0])
 PY
+
+# ---------- UI patch 1: gold theme, Exo 2 font, brand texts ----------
+python3 - <<'PY'
+import re
+base = 'sharedUI/src/commonMain/kotlin/org/olcbox/app/'
+
+# Gold accent on the dark colour scheme (the app's default theme)
+p = base + 'ui/theme/Color.kt'
+s = open(p, encoding='utf-8').read()
+a = s.index('internal val OlcboxDarkColorScheme')
+b = s.index('internal val OlcboxLightColorScheme')
+block = s[a:b]
+gold = {
+    'primary': 'E3AE4F', 'onPrimary': '1A1405', 'primaryContainer': '3A2E10', 'onPrimaryContainer': 'FFE3A8',
+    'inversePrimary': 'B8801F', 'secondary': 'D9B66A', 'onSecondary': '1F1708', 'secondaryContainer': '2E2410',
+    'onSecondaryContainer': 'F5DDA0', 'tertiary': 'F2C46E', 'onTertiary': '2A1C00', 'tertiaryContainer': '3A2C0E',
+    'onTertiaryContainer': 'FFE8B8', 'surfaceVariant': '262626', 'surfaceContainerLow': '0E0E0E',
+    'surfaceContainer': '141414', 'surfaceContainerHigh': '1C1C1C', 'surfaceContainerHighest': '262626',
+}
+for name, hx in gold.items():
+    block, n = re.subn(r'(?m)^(\s+)' + name + r' = Color\(0xFF[0-9A-Fa-f]{6}\)', r'\g<1>' + name + ' = Color(0xFF' + hx + ')', block)
+    assert n == 1, 'colour not found: ' + name
+open(p, 'w', encoding='utf-8').write(s[:a] + block + s[b:])
+
+# Brand text in the UI strings (string literals only; the sub User-Agent keeps its old name on purpose)
+p = base + 'ui/i18n/Strings.kt'
+s = open(p, encoding='utf-8').read()
+assert not re.search(r'[A-Za-z_]YPtun|YPtun[A-Za-z_]', s), 'YPtun inside an identifier'
+open(p, 'w', encoding='utf-8').write(s.replace('YPtun', 'Valhalla'))
+p = base + 'ui/features/home/components/HomeScreenAppBar.kt'
+s = open(p, encoding='utf-8').read()
+open(p, 'w', encoding='utf-8').write(s.replace('text = "YPtun",', 'text = "Valhalla",'))
+print('theme + texts patched')
+PY
+
+# Exo 2 font: static weights made from the Google Fonts variable file, written over the old font files.
+# If anything fails the original font is kept and the build goes on.
+(
+  python3 -m pip install --break-system-packages fonttools >/dev/null 2>&1 || true
+  FONT_DIR=sharedUI/src/commonMain/composeResources/font
+  URL1='https://github.com/google/fonts/raw/main/ofl/exo2/Exo2%5Bwght%5D.ttf'
+  URL2='https://raw.githubusercontent.com/google/fonts/main/ofl/exo2/Exo2%5Bwght%5D.ttf'
+  if curl -fsSL -o /tmp/exo2.ttf "$URL1" || curl -fsSL -o /tmp/exo2.ttf "$URL2"; then
+    ok=1
+    for pair in regular:400 medium:500 semi_bold:600 bold:700; do
+      n=${pair%%:*}; w=${pair##*:}
+      if python3 -m fontTools.varLib.instancer /tmp/exo2.ttf "wght=$w" -o "/tmp/exo2_$n.ttf"; then :; else ok=0; fi
+    done
+    if [ "$ok" = 1 ]; then
+      for n in regular medium semi_bold bold; do cp "/tmp/exo2_$n.ttf" "$FONT_DIR/google_sans_flex_$n.ttf"; done
+      echo "Exo 2 font installed"
+    else
+      echo "::warning::Exo 2 instancing failed, keeping the original font"
+    fi
+  else
+    echo "::warning::Exo 2 download failed, keeping the original font"
+  fi
+) || echo "::warning::font step skipped"
+
+# ---------- later patches: every branding/patches/*.sh runs from the repo root ----------
+cd ..
+for patch in branding/patches/*.sh; do
+  if [ -f "$patch" ]; then echo "Running $patch"; bash "$patch"; fi
+done
 echo "Valhalla branding applied"
