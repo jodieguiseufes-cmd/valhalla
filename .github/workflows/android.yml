@@ -91,3 +91,52 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release create "test-${{ github.run_number }}" YPtun/androidApp/build/outputs/apk/release/*.apk --prerelease --title "Valhalla test ${{ github.run_number }}" --notes "Test build, signed with a temporary key."
+
+  smoke:
+    needs: build
+    if: ${{ inputs.abi == 'all' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Valhalla-apk
+          path: apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Start the app in an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install -r apk/Valhalla-1.0.0-universal-release.apk
+            adb shell pm grant com.vlhnet.valhalla android.permission.POST_NOTIFICATIONS || true
+            adb logcat -c
+            adb shell monkey -p com.vlhnet.valhalla -c android.intent.category.LAUNCHER 1
+            sleep 25
+            adb logcat -d > apk/full.log
+            adb shell pidof com.vlhnet.valhalla > apk/pid.txt || true
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo '## Smoke test (emulator, Android 14)'
+            if [ -s apk/pid.txt ]; then echo 'The app was still running after 25 seconds.'; else echo 'The app is NOT running (it crashed or exited).'; fi
+            echo '### Crash'
+            echo '```'
+            grep -n -A45 'FATAL EXCEPTION' apk/full.log | head -90 || true
+            echo '```'
+            echo '### App log lines'
+            echo '```'
+            grep -iE 'olcbox|valhalla|AndroidRuntime' apk/full.log | tail -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
