@@ -14,7 +14,7 @@ for f in androidApp/src/main/res/values*/strings.xml; do
   sed -i -E 's#(name="(qs_tile_label|widget_toggle_label)">)YPtun(<)#\1Valhalla\3#' "$f"
 done
 
-# APK file names: Valhalla-<version>-<abi>-release.apk
+# APK file names: vlh-<abi>-release.apk (владелец 26.10: файл называется vlh)
 python3 - <<'PY'
 p = 'androidApp/build.gradle.kts'
 s = open(p, encoding='utf-8').read()
@@ -22,7 +22,7 @@ if 'BasePluginExtension' not in s:
     marker = 'android {\n    namespace = "org.olcbox.app"'
     assert marker in s, 'marker not found in build.gradle.kts'
     add = ('extensions.configure<org.gradle.api.plugins.BasePluginExtension> {\n'
-           '    archivesName.set("Valhalla-${olcboxVersion.get()}")\n}\n\n')
+           '    archivesName.set("vlh")\n}\n\n')
     open(p, 'w', encoding='utf-8').write(s.replace(marker, add + marker, 1))
 PY
 
