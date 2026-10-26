@@ -12,7 +12,7 @@ F=sharedUI/src/commonMain/composeResources/font
 for w in regular:Regular medium:Medium semi_bold:SemiBold bold:Bold; do
   cp "../branding/fonts/Inter-${w#*:}.ttf" "$F/google_sans_flex_${w%%:*}.ttf"
 done
-cp ../branding/fonts/LICENSE.txt "$F/../Inter-LICENSE.txt" 2>/dev/null || true
+# лицензия Inter (OFL) лежит в branding/fonts/LICENSE.txt; в composeResources посторонние файлы ломают генерацию ресурсов
 
 python3 - <<'PY'
 def patch(p, pairs):
