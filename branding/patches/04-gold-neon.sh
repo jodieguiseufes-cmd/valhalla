@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Patch 4 (26.10.2026, макет A1 владельца): золотая тёмная тема, кнопка подключения «неон» со знаком в круге,
+# Patch 4 (26.10.2026, макет A1 владельца; 26.10 №13: без плюсика, круг с тёмной заливкой): золотая тёмная тема, кнопка подключения «неон» со знаком в круге,
 # в шапке — только слоган и слово VALHALLA (знак уже в кнопке).
 set -euo pipefail
 cd "$(dirname "$0")/../../YPtun"
@@ -47,9 +47,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -117,6 +114,7 @@ fun StartButton(
             val r = size.minDimension / 2f - 14.dp.toPx()
             val tl = Offset(center.x - r, center.y - r)
             val sz = Size(r * 2f, r * 2f)
+            drawCircle(Brush.radialGradient(listOf(Color(0xFF1D170D), Color(0xFF0A0806)), center = center, radius = r), r, center)
             drawCircle(track, r, style = Stroke(2.dp.toPx()))
             val start = if (isLoading) -90f + rot else -90f
             val sweep = if (isLoading) 110f else sweepTarget
@@ -137,9 +135,6 @@ fun StartButton(
             modifier = Modifier.size(108.dp).alpha(if (enabled) 0.72f + 0.28f * lit else 0.4f),
             contentScale = ContentScale.Fit
         )
-        if (requiresSetup && !isActive && !isLoading) {
-            Icon(Icons.Rounded.Add, contentDescription = null, tint = gold, modifier = Modifier.align(Alignment.BottomCenter).size(26.dp))
-        }
     }
 }
 '''
