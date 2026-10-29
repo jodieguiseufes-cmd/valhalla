@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.olcbox.app.data.model.LocationConfig
@@ -241,7 +242,7 @@ fun VlhApp(
     val bottomPad = navInset + 92.dp
 
     // Проба шрифта (разд. 4 п. 5 плана): явный Inter без наклона на всех своих экранах.
-    val baseStyle = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Normal)
+    val baseStyle = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Normal, lineHeight = TextUnit.Unspecified)
 
     ProvideTextStyle(baseStyle) {
         Box(modifier = Modifier.fillMaxSize().background(Vlh.Bg)) {
